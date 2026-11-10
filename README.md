@@ -11,6 +11,8 @@ gewünscht – live, welche Geräte gerade online sind.
 - **Plan-Datei öffnen** (`*.zplan.json`, Strg+O oder per Ziehen ins Fenster). Die Datei enthält die
   Grundrisse (SVG), die Geräteliste, die Positionen, Netzwerkdosen, weitere Geräte (WLAN, LAN, …) und
   die zuletzt geladene Netzwerkkarte.
+- **Ein- und ausblenden** je Geräteart über die Schalter über dem Plan: Zigbee, Zigbee-Verbindungen, WLAN,
+  HomeMatic, X-Sense, DuoFern, andere Geräte (Zuordnung über `proto` der weiteren Geräte; `xsense` für X-Sense).
 - **Bearbeiten**: Geräte platzieren und verschieben, Einbauhöhe wählen, Netzwerkdosen setzen.
   Änderungen werden automatisch in die geöffnete Datei gespeichert; beim ersten Speichern einer
   Sitzung bleibt der vorige Stand als `.bak` erhalten.

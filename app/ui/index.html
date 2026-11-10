@@ -99,6 +99,13 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted);margin-top:8px}
 .btn:disabled{opacity:.5;cursor:default}
 body.drop .planwrap{outline:3px dashed var(--accent);outline-offset:-6px}
 #version{font:11px var(--f-mono);color:var(--muted)}
+.tsep{width:1px;align-self:stretch;background:var(--line);margin:0 2px}
+.showbar{display:contents}
+.tools button[data-show]{display:inline-flex;align-items:center;gap:6px}
+.tools button[data-show] .sw{width:10px;height:10px;border-radius:50%;display:inline-block}
+.tools button[data-show][aria-pressed="false"]{color:var(--muted);background:transparent;text-decoration:line-through}
+.tools button[data-show][aria-pressed="false"] .sw{opacity:.3}
+.tools button[data-show][aria-pressed="true"]{border-color:var(--accent)}
 /* Programmfenster: Kopf fest, Plan und Seitenleiste scrollen jeweils fuer sich */
 @media (min-width:901px){
   body{height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -130,8 +137,8 @@ body.drop .planwrap{outline:3px dashed var(--accent);outline-offset:-6px}
       <button id="zin" title="Vergrößern">+</button>
       <button id="zout" title="Verkleinern">−</button>
       <button id="lbl" aria-pressed="true">Namen</button>
-      <button id="lnk" aria-pressed="true">Verbindungen</button>
-      <button id="gxb" aria-pressed="true">Weitere Geräte</button>
+      <span class="tsep"></span>
+      <span id="showBar" class="showbar" role="group" aria-label="Im Plan zeigen"></span>
     </div>
     <div id="plan"></div>
     <div class="hint" id="hint" hidden></div>
@@ -205,7 +212,7 @@ body.drop .planwrap{outline:3px dashed var(--accent);outline-offset:-6px}
 </main>
 <div id="version" style="text-align:right;margin-top:6px"></div>
 <script>
-const PROTO = {zigbee:['Zigbee','#1f6fb5'],wlan:['WLAN','#d4791c'],lan:['LAN','#7b3fa0'],dect:['DECT','#a0337a'],duofern:['DuoFern','#13897a'],homematic:['HomeMatic','#2f4a66'],ir:['IR','#7a837f'],bus:['Kabel/Bus','#5f6b66'],'–':['ohne Funk','#9aa6a0']};
+const PROTO = {zigbee:['Zigbee','#1f6fb5'],wlan:['WLAN','#d4791c'],lan:['LAN','#7b3fa0'],dect:['DECT','#a0337a'],xsense:['X-Sense','#c0392b'],duofern:['DuoFern','#13897a'],homematic:['HomeMatic','#2f4a66'],ir:['IR','#7a837f'],bus:['Kabel/Bus','#5f6b66'],'–':['ohne Funk','#9aa6a0']};
 // Hausdaten kommen aus der Plan-Datei (Abschnitt "haus"); hier nur Vorgaben fuer aeltere Dateien
 const HAUS_VORGABE = {
   massstab: {S: 70, OX: 600, OY: 270, TD: 9.37},          // px/m, Ursprung, Haustiefe (gleich fuer alle Etagen)
@@ -236,14 +243,24 @@ function setHaus(h) {
   for (const k of Object.keys(CEIL)) delete CEIL[k]; Object.assign(CEIL, HAUS.deckenhoehe || {});
 }
 const NS = "http://www.w3.org/2000/svg";
+// Schalter ueber dem Plan: [Schluessel, Beschriftung, Farbe]
+const SHOW = [["zigbee", "Zigbee", "#1f6fb5"], ["zlinks", "Zigbee-Verbindungen", "#2f8a4e"], ["wlan", "WLAN", "#d4791c"],
+  ["homematic", "HomeMatic", "#2f4a66"], ["xsense", "X-Sense", "#c0392b"], ["duofern", "DuoFern", "#13897a"], ["andere", "andere Geräte", "#7a837f"]];
+// Zuordnung eines weiteren Geraets (GERAETE) zu einem Schalter
+function showGroup(d) {
+  const p = String(d.proto || "").toLowerCase();
+  if (p === "xsense" || p === "x-sense" || /x-?sense/i.test(d.integ || "")) return "xsense";
+  return ["zigbee", "wlan", "homematic", "duofern"].includes(p) ? p : "andere";
+}
 
 const st = {
   dev: new Map(),
   live: {on: false, avail: {}, lqi: {}},
   pos: {}, net: null, floor: "eg", sel: null, placing: false, zoom: 1,
-  filter: "open", q: "", labels: true, links: true,
+  filter: "open", q: "", labels: true,
   lan: {}, lanMode: false, lanSel: null,
-  gx: true, gsel: null, gfil: 'alle',
+  gsel: null, gfil: 'alle',
+  show: {zigbee: true, zlinks: true, wlan: true, homematic: true, xsense: true, duofern: true, andere: true},
 };
 
 // ---------- Hilfen
@@ -409,10 +426,11 @@ function renderOverlay() {
   if (!svgRoot) return;
   const g = svgRoot.querySelector("#ov");
   g.innerHTML = "";
-  const here = Object.entries(st.pos).filter(([, p]) => p.f === st.floor).map(([i]) => i);
-  const hereSet = new Set(here);
+  const onFloor = Object.entries(st.pos).filter(([, p]) => p.f === st.floor).map(([i]) => i);
+  const hereSet = new Set(onFloor);                                   // fuer die Verbindungen
+  const here = onFloor.filter(i => st.show.zigbee || i === st.sel);  // gezeichnete Zigbee-Geraete
   const ghosts = new Set();
-  if (st.links && st.net) {
+  if (st.show.zlinks && st.net) {
     for (const p of PAIRS.values()) {
       const pa = st.pos[p.a], pb = st.pos[p.b];
       if (!pa || !pb) continue;
@@ -431,7 +449,7 @@ function renderOverlay() {
       }
     }
   }
-  for (const i of ghosts) { const p = st.pos[i]; const [x, y] = toPx(p.x, p.y); marker(g, i, x, y, true); }
+  if (st.show.zigbee) for (const i of ghosts) { const p = st.pos[i]; const [x, y] = toPx(p.x, p.y); marker(g, i, x, y, true); }
   for (const i of here) { if (i === st.sel) continue; const p = st.pos[i]; const [x, y] = toPx(p.x, p.y); marker(g, i, x, y, false); }
   if (st.sel && hereSet.has(st.sel)) { const p = st.pos[st.sel]; const [x, y] = toPx(p.x, p.y); marker(g, st.sel, x, y, false); }
   for (const [id, d] of Object.entries(st.lan)) {
@@ -446,13 +464,13 @@ function renderOverlay() {
     m.addEventListener("click", e => { e.stopPropagation(); if (st.lanMode) return; st.lanSel = st.lanSel === id ? null : id; renderOverlay(); renderLan(); });
   }
 
-  if (st.gx) for (const [k, d] of GERAETE.entries()) {
-    if (d.f !== st.floor) continue;
+  for (const [k, d] of GERAETE.entries()) {
+    if (d.f !== st.floor || (!st.show[showGroup(d)] && st.gsel !== k)) continue;
     const [x, y] = toPx(d.x, d.y); const col = PROTO[d.proto]?.[1] || "#7a837f";
     const src = d.von && Object.entries(st.pos).find(([i]) => nameOf(i) === d.von || nameOf(i) === d.von.replace(/^Steckdose /, ""));
     const srcG = d.von && GERAETE.find(o => o.name === d.von);
     const sp = src ? st.pos[src[0]] : srcG;
-    if (sp && sp.f === d.f && (st.gsel === k || st.links)) { const [sx, sy] = toPx(sp.x, sp.y); el("line", {x1: sx, y1: sy, x2: x, y2: y, stroke: col, "stroke-width": st.gsel === k ? 2.5 : 1.2, "stroke-dasharray": "2 4", "stroke-opacity": .8}, g); }
+    if (sp && sp.f === d.f) { const [sx, sy] = toPx(sp.x, sp.y); el("line", {x1: sx, y1: sy, x2: x, y2: y, stroke: col, "stroke-width": st.gsel === k ? 2.5 : 1.2, "stroke-dasharray": "2 4", "stroke-opacity": .8}, g); }
     const m = el("g", {style: "cursor:pointer", role: "button", tabindex: 0, "aria-label": d.name}, g);
     if (st.gsel === k) el("circle", {cx: x, cy: y, r: 16, fill: "none", stroke: "var(--accent)", "stroke-width": 3}, m);
     const hist = d.status === "historisch", plan = d.status === "geplant";
@@ -663,7 +681,6 @@ document.getElementById("chips").addEventListener("click", e => {
 document.getElementById("zin").onclick = () => { st.zoom = Math.min(3, st.zoom + .25); document.getElementById("planwrap").style.setProperty("--zoom", st.zoom); };
 document.getElementById("zout").onclick = () => { st.zoom = Math.max(.75, st.zoom - .25); document.getElementById("planwrap").style.setProperty("--zoom", st.zoom); };
 document.getElementById("lbl").onclick = e => { st.labels = !st.labels; e.target.setAttribute("aria-pressed", String(st.labels)); renderOverlay(); };
-document.getElementById("lnk").onclick = e => { st.links = !st.links; e.target.setAttribute("aria-pressed", String(st.links)); renderOverlay(); };
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (st.lanMode) { st.lanMode = false; renderLan(); renderOverlay(); }
@@ -672,11 +689,18 @@ document.addEventListener("keydown", e => {
 
 (function initGx() {
   const chips = document.getElementById("gxChips");
-  const opts = [["alle", "Alle"], ["wlan", "WLAN"], ["lan", "LAN"], ["duofern", "DuoFern"], ["homematic", "HomeMatic"], ["dect", "DECT"], ["zigbee", "Zigbee"], ["geplant", "geplant"], ["historisch", "historisch"]];
+  const opts = [["alle", "Alle"], ["wlan", "WLAN"], ["lan", "LAN"], ["duofern", "DuoFern"], ["homematic", "HomeMatic"], ["xsense", "X-Sense"], ["dect", "DECT"], ["zigbee", "Zigbee"], ["geplant", "geplant"], ["historisch", "historisch"]];
   chips.innerHTML = opts.map(([k, t]) => `<button data-k="${k}" aria-pressed="${st.gfil === k}">${t}</button>`).join("");
   chips.querySelectorAll("button").forEach(b => b.onclick = () => { st.gfil = b.dataset.k; chips.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); renderGx(); });
-  const gb = document.getElementById("gxb");
-  gb.onclick = () => { st.gx = !st.gx; gb.setAttribute("aria-pressed", String(st.gx)); renderOverlay(); };
+  // Ein-/Ausblenden je Geraeteart (Zustand bleibt im Programm gespeichert)
+  try { Object.assign(st.show, JSON.parse(localStorage.getItem("hp-show") || "{}")); } catch {}
+  const bar = document.getElementById("showBar");
+  bar.innerHTML = SHOW.map(([k, t, c]) => `<button data-show="${k}" aria-pressed="${st.show[k]}"><i class="sw" style="background:${c}"></i>${t}</button>`).join("");
+  bar.querySelectorAll("button").forEach(b => b.onclick = () => {
+    const k = b.dataset.show; st.show[k] = !st.show[k]; b.setAttribute("aria-pressed", String(st.show[k]));
+    try { localStorage.setItem("hp-show", JSON.stringify(st.show)); } catch {}
+    renderOverlay();
+  });
   renderGx();
 })();
 
