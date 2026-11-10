@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zigbee-Hausplan</title>
+<style>
+/* Layout: Kopfzeile mit Etagen-Register, darunter Plan (links, gross) und Arbeitsleiste (rechts); am Handy untereinander */
+:root{
+  --bg:#eef0ee; --panel:#ffffff; --ink:#1d2421; --muted:#5f6b66; --line:#d3d8d5;
+  --accent:#0d6b63; --accent-ink:#ffffff; --accent-soft:#d9ece9;
+  --paper:#ffffff; --good:#2f8a4e; --warn:#c07a00; --bad:#c0392b;
+  --router:#1f6fb5; --end:#2f8a4e; --coord:#c0392b; --unk:#7a837f;
+  --f-ui:"Segoe UI Variable","Segoe UI",system-ui,sans-serif; --f-cond:"Segoe UI Variable Display","Segoe UI Semibold","Segoe UI",system-ui,sans-serif; --f-mono:"Cascadia Mono",Consolas,ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141917; --panel:#1d2421; --ink:#e7ece9; --muted:#9aa6a0; --line:#34403b;
+  --accent:#3fb3a6; --accent-ink:#0b1513; --accent-soft:#1f3b37; --paper:#f4f5f2;
+  --good:#4fbf74; --warn:#e2a23a; --bad:#ec6a5c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --panel:#1d2421; --ink:#e7ece9; --muted:#9aa6a0; --line:#34403b;
+  --accent:#3fb3a6; --accent-ink:#0b1513; --accent-soft:#1f3b37; --paper:#f4f5f2;
+  --good:#4fbf74; --warn:#e2a23a; --bad:#ec6a5c; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px;box-sizing:border-box}
+*{box-sizing:border-box}
+header{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;margin-bottom:12px}
+h1{font-family:var(--f-cond);font-weight:600;font-size:26px;letter-spacing:.01em;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px}
+.floors{display:flex;gap:4px;flex-wrap:wrap}
+.floors button{font:600 15px var(--f-cond);letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 13px;border-radius:6px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.floors button .n{font:500 11px var(--f-mono);color:var(--muted)}
+.floors button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.floors button[aria-pressed="true"] .n{color:var(--accent-ink);opacity:.8}
+main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+.planwrap{background:var(--paper);border:1px solid var(--line);border-radius:8px;overflow:auto;position:relative;max-height:calc(100vh - 110px);min-height:320px}
+.planwrap svg{display:block;width:calc(100% * var(--zoom,1));height:auto;touch-action:manipulation}
+.planwrap.placing{cursor:crosshair}
+.tools{position:sticky;top:8px;left:8px;display:flex;gap:6px;z-index:2;padding:8px;width:max-content;flex-wrap:wrap}
+.tools button,.btn{font:500 13px var(--f-ui);border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 10px;border-radius:6px;cursor:pointer}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--bad)}
+.btn:focus-visible,.floors button:focus-visible,.tools button:focus-visible,input:focus-visible,.dev:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hint{position:sticky;left:8px;bottom:8px;margin:0 8px 8px;padding:8px 12px;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:14px;width:max-content;max-width:calc(100% - 16px)}
+aside{display:flex;flex-direction:column;gap:12px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.card h2{font:600 13px var(--f-cond);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.stat{display:flex;gap:16px;flex-wrap:wrap;font-size:14px}
+.stat b{font:500 15px var(--f-mono)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type=search]{width:100%;font:15px var(--f-ui);padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.chips{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+.chips button{font:500 12px var(--f-ui);padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+.chips button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.list{max-height:42vh;overflow:auto;margin:0 -6px;padding:0 6px}
+.dev{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:8px;align-items:center;padding:5px 6px;border-radius:5px;cursor:pointer;font-size:14px}
+.dev:hover{background:var(--accent-soft)}
+.dev[aria-selected="true"]{background:var(--accent-soft);outline:1px solid var(--accent)}
+.dev .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev .fl{font:500 11px var(--f-mono);color:var(--muted)}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+.dot.R{background:var(--router)}.dot.E{background:var(--end);border-radius:2px}.dot.C{background:var(--coord)}.dot.U{background:var(--unk)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend span{display:flex;gap:5px;align-items:center}
+.sel h3{font:600 20px var(--f-cond);margin:0 0 2px;text-wrap:balance}
+.mono{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font:600 11px var(--f-cond);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:4px 4px;border-bottom:1px solid var(--line)}
+td{padding:4px;border-bottom:1px solid var(--line);vertical-align:top}
+td.n{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.tblwrap{overflow-x:auto}
+.lqi{display:inline-block;min-width:34px;text-align:center;border-radius:4px;padding:0 4px;color:#fff;font:500 12px var(--f-mono)}
+.flag{font-size:12px;padding:6px 8px;border-radius:5px;margin-top:6px;border-left:3px solid var(--warn);background:var(--accent-soft)}
+.flag.bad{border-left-color:var(--bad)}
+.issue{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;padding:6px 4px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
+.issue:hover{background:var(--accent-soft)}
+.sev{width:8px;border-radius:3px;background:var(--warn)}.sev.bad{background:var(--bad)}
+.note{font-size:12px;color:var(--muted);margin-top:6px}
+.empty{color:var(--muted);font-size:14px}
+:root{--lan:#7b3fa0}
+.lanrow{display:grid;grid-template-columns:14px minmax(0,1fr) auto auto;gap:6px 8px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px}
+.lanrow[aria-selected="true"]{background:var(--accent-soft)}
+.lanrow input[type=text]{width:100%;min-width:0;font:13px var(--f-ui);padding:3px 6px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink)}
+.lanrow .chips{grid-column:2/5;margin:0}
+.lanrow .chips button{font-size:11px;padding:1px 7px}
+.gd{width:12px;height:12px;transform:rotate(45deg) scale(.8);border:2px solid;display:inline-block}
+.sq{width:12px;height:12px;border-radius:2px;background:var(--lan);display:inline-block}
+.btn.on{background:var(--lan);border-color:var(--lan);color:#fff}
+@media (prefers-reduced-motion:no-preference){.mk{transition:transform .15s}}
+</style>
+<style>
+.filebar{display:flex;gap:6px;flex-wrap:wrap}
+#fileInfo{max-width:46ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.off{color:var(--bad);font-weight:600}.on{color:var(--good);font-weight:600}
+.ldot{width:10px;height:10px;border-radius:50%;background:var(--unk);display:inline-block}
+.ldot.on{background:var(--good)}.ldot.busy{background:var(--warn)}
+.lform{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 8px;align-items:center;margin-top:8px;font-size:13px}
+.lform input[type=text],.lform input[type=password],.lform input[type=number]{width:100%;min-width:0;font:13px var(--f-ui);padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink)}
+details summary{cursor:pointer;font-size:13px;color:var(--muted);margin-top:8px}
+.btn:disabled{opacity:.5;cursor:default}
+body.drop .planwrap{outline:3px dashed var(--accent);outline-offset:-6px}
+#version{font:11px var(--f-mono);color:var(--muted)}
+/* Programmfenster: Kopf fest, Plan und Seitenleiste scrollen jeweils fuer sich */
+@media (min-width:901px){
+  body{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  main{flex:1;min-height:0;align-items:stretch}
+  .planwrap{max-height:none;height:100%}
+  aside{overflow-y:auto;min-height:0;padding-right:4px}
+  #version{position:fixed;right:10px;bottom:4px;margin:0}
+}
+</style>
+</head><body>
+<header>
+  <div>
+    <h1>Zigbee-Hausplan</h1>
+    <div class="sub" id="fileInfo">keine Plan-Datei</div>
+  </div>
+  <div class="filebar">
+    <button class="btn" id="bOpen" title="Strg+O">Öffnen …</button>
+    <button class="btn" id="bSave" title="Strg+S">Speichern</button>
+    <button class="btn" id="bSaveAs" title="Strg+Umschalt+S">Speichern unter …</button>
+    <button class="btn" id="bNet">Netzwerkkarte laden …</button>
+    <input type="file" id="pickFile" accept=".json,application/json" hidden>
+  </div>
+  <nav class="floors" id="floors" aria-label="Etage"></nav>
+</header>
+
+<main>
+  <section class="planwrap" id="planwrap" aria-label="Grundriss">
+    <div class="tools">
+      <button id="zin" title="Vergrößern">+</button>
+      <button id="zout" title="Verkleinern">−</button>
+      <button id="lbl" aria-pressed="true">Namen</button>
+      <button id="lnk" aria-pressed="true">Verbindungen</button>
+      <button id="gxb" aria-pressed="true">Weitere Geräte</button>
+    </div>
+    <div id="plan"></div>
+    <div class="hint" id="hint" hidden></div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h2>Stand</h2>
+      <div class="stat">
+        <div>Platziert <b id="stPlaced">0</b> von <b id="stAll">0</b></div>
+        <div>Netzwerkkarte <b id="stNet">–</b></div>
+      </div>
+      <div class="note" id="storeNote"></div>
+    </div>
+
+    <div class="card" id="liveCard">
+      <h2>Live · Zigbee2MQTT</h2>
+      <div class="row"><i class="ldot" id="liveDot"></i><span id="liveState">nicht verbunden</span>
+        <button class="btn" id="bConnect" style="margin-left:auto">Verbinden</button></div>
+      <div class="stat" id="liveStat" style="margin-top:6px"></div>
+      <div class="row" style="margin-top:8px"><button class="btn" id="bMap" disabled>Netzwerkkarte abrufen</button>
+        <label style="font-size:13px"><input type="checkbox" id="mapRoutes"> mit Routen</label></div>
+      <details><summary>Verbindung</summary>
+        <form id="liveForm" class="lform" onsubmit="return false" autocomplete="off">
+          <label for="lh">Broker</label><input type="text" id="lh" name="host" placeholder="z. B. homeassistant.local">
+          <label for="lp">Port</label><input type="number" id="lp" name="port" value="1883">
+          <label for="lu">Benutzer</label><input type="text" id="lu" name="user">
+          <label for="lw">Passwort</label><input type="password" id="lw" name="pass">
+          <label for="lb">Topic</label><input type="text" id="lb" name="base" value="zigbee2mqtt">
+        </form>
+        <div class="note">Zugang zum MQTT-Broker von Zigbee2MQTT (bei der Home-Assistant-App: der MQTT-Benutzer aus deren Einstellungen). Das Passwort wird verschlüsselt für dein Windows-Konto gespeichert. Rot durchgekreuzt = offline.</div>
+      </details>
+    </div>
+
+    <div class="card sel" id="selCard" hidden></div>
+
+    <div class="card" id="gxCard">
+      <h2>Weitere Geräte · Funk &amp; Netz</h2>
+      <div class="chips" id="gxChips"></div>
+      <div class="list" id="gxList" style="max-height:30vh"></div>
+      <div id="gxInfo"></div>
+      <div class="note">Raute = Nicht-Zigbee-Gerät bzw. geplante/historische Position. Gestrichelt umrandet: geplant · grau mit ×: historisch (für alte LQI-Karten). Punktlinie: wird von diesem Gerät versorgt/geschaltet.</div>
+    </div>
+
+    <div class="card" id="lanCard">
+      <h2>Netzwerkdosen</h2>
+      <div class="row"><button class="btn" id="lanAdd" aria-pressed="false">Dose setzen</button><span class="note" id="lanCount" style="margin:0"></span></div>
+      <div id="lanList" style="margin-top:6px"></div>
+      <div class="note">„Dose setzen“ einschalten, dann im Plan auf jede Dose klicken – auch mehrere hintereinander. Bezeichnung und Höhe lassen sich danach in der Liste ändern.</div>
+    </div>
+
+    <div class="card" id="issueCard" hidden>
+      <h2>Auffälligkeiten</h2>
+      <div id="issues"></div>
+    </div>
+
+    <div class="card">
+      <h2>Geräte</h2>
+      <input type="search" id="q" placeholder="Gerät suchen" aria-label="Gerät suchen">
+      <div class="chips" id="chips">
+        <button data-f="open" aria-pressed="true">Noch nicht platziert</button>
+        <button data-f="floor" aria-pressed="false">Diese Etage</button>
+        <button data-f="all" aria-pressed="false">Alle</button>
+      </div>
+      <div class="list" id="list" role="listbox" aria-label="Geräte"></div>
+      <div class="legend" style="margin-top:8px">
+        <span><i class="dot C"></i>Koordinator</span><span><i class="dot R"></i>Router</span><span><i class="dot E"></i>Batteriegerät</span>
+      </div>
+    </div>
+  </aside>
+</main>
+<div id="version" style="text-align:right;margin-top:6px"></div>
+<script>
+const PROTO = {zigbee:['Zigbee','#1f6fb5'],wlan:['WLAN','#d4791c'],lan:['LAN','#7b3fa0'],dect:['DECT','#a0337a'],duofern:['DuoFern','#13897a'],homematic:['HomeMatic','#2f4a66'],ir:['IR','#7a837f'],bus:['Kabel/Bus','#5f6b66'],'–':['ohne Funk','#9aa6a0']};
+// Hausdaten kommen aus der Plan-Datei (Abschnitt "haus"); hier nur Vorgaben fuer aeltere Dateien
+const HAUS_VORGABE = {
+  massstab: {S: 70, OX: 600, OY: 270, TD: 9.37},          // px/m, Ursprung, Haustiefe (gleich fuer alle Etagen)
+  etagen: [
+    {id:"sp", name:"Speicher", svg:"dg", z:8.62, dim:true, hinweis:"Speicher (Spitzboden über dem DG)"},
+    {id:"dg", name:"DG", svg:"dg", z:5.95},
+    {id:"og", name:"OG", svg:"og", z:2.95},
+    {id:"eg", name:"EG", svg:"eg", z:0},
+    {id:"kg", name:"Keller", svg:"kg", z:-2.6},
+  ],
+  deckenhoehe: {sp: 1.6, dg: 2.4, og: 2.67, eg: 2.60, kg: 2.2},
+  // Bereiche mit anderer Fussbodenhoehe (relativ zur Etage); erster Treffer gilt
+  zonen: [
+    {f:"eg", x1:-4.68, y1:5.9, dz:-0.945, name:"Garage"},
+    {f:"eg", x1:0, dz:-0.62, name:"Anbau"},
+  ],
+  nord: 122,                                              // Himmelsrichtung von "oben im Plan" in Grad
+  startEtage: "eg",
+};
+let HAUS = HAUS_VORGABE;
+let S = 70, OX = 600, OY = 270, TD = 9.37;
+let FLOORS = HAUS.etagen, FL = {};
+let PLANS = {}, GERAETE = [], ZINFO = {};
+function setHaus(h) {
+  HAUS = {...HAUS_VORGABE, ...(h || {})};
+  ({S, OX, OY, TD} = {...HAUS_VORGABE.massstab, ...(HAUS.massstab || {})});
+  FLOORS = HAUS.etagen; FL = Object.fromEntries(FLOORS.map(f => [f.id, f]));
+  for (const k of Object.keys(CEIL)) delete CEIL[k]; Object.assign(CEIL, HAUS.deckenhoehe || {});
+}
+const NS = "http://www.w3.org/2000/svg";
+
+const st = {
+  dev: new Map(),
+  live: {on: false, avail: {}, lqi: {}},
+  pos: {}, net: null, floor: "eg", sel: null, placing: false, zoom: 1,
+  filter: "open", q: "", labels: true, links: true,
+  lan: {}, lanMode: false, lanSel: null,
+  gx: true, gsel: null, gfil: 'alle',
+};
+
+// ---------- Hilfen
+const toPx = (x, y) => [OX + x * S, OY + (TD - y) * S];
+const toM = (px, py) => [(px - OX) / S, TD - (py - OY) / S];
+const CEIL = {};   // Raumhoehe je Etage (aus der Plan-Datei)
+const HK = {low: ["0,3 m", () => 0.3], mid: ["1,10 m", () => 1.1], ceil: ["Decke", f => CEIL[f] ?? 2.5]};
+const hOf = p => HK[p.hk || "mid"][1](p.f);
+// Bereiche mit anderer Fussbodenhoehe (z. B. Anbau, Garage) aus HAUS.zonen
+const inZone = (p, q) => q.f === p.f && (q.x0 == null || p.x >= q.x0) && (q.x1 == null || p.x < q.x1) && (q.y0 == null || p.y >= q.y0) && (q.y1 == null || p.y < q.y1);
+const zAnbau = p => (HAUS.zonen || []).find(q => inZone(p, q))?.dz || 0;
+const z = p => (FL[p.f]?.z || 0) + zAnbau(p) + hOf(p);
+function guessHk(name) {
+  if (/^(Lampe|Lampen|Deckenlampe|Spiegel)/.test(name)) return "ceil";
+  if (/(Steckdose|Docking|Monitor|Drucker|Trockner|Waschmaschine|Wasserkocher|Kühlschrank|Fernseher|Vitrine)/.test(name)) return "low";
+  return "mid";
+}
+function dist(a, b) {
+  const pa = st.pos[a], pb = st.pos[b];
+  if (!pa || !pb) return null;
+  return Math.hypot(pa.x - pb.x, pa.y - pb.y, z(pa) - z(pb));
+}
+function lqiColor(l) { return l == null ? "var(--unk)" : l < 60 ? "var(--bad)" : l < 120 ? "var(--warn)" : "var(--good)"; }
+function typeOf(ieee) { return st.dev.get(ieee)?.t || "U"; }
+function nameOf(ieee) { return st.dev.get(ieee)?.name || ieee; }
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// ---------- Netzwerkkarte: Paare zusammenfassen
+function pairs() {
+  const m = new Map();
+  if (!st.net) return m;
+  for (const [s, t, lqi, rel] of st.net.links) {
+    const k = s < t ? s + "|" + t : t + "|" + s;
+    const p = m.get(k) || {a: s < t ? s : t, b: s < t ? t : s, lqi: {}, rel: {}};
+    p.lqi[s + ">" + t] = lqi; p.rel[s + ">" + t] = rel;
+    m.set(k, p);
+  }
+  for (const p of m.values()) {
+    const v = Object.values(p.lqi).filter(x => x != null);
+    p.best = v.length ? Math.max(...v) : null;
+    p.worst = v.length ? Math.min(...v) : null;
+  }
+  return m;
+}
+let PAIRS = new Map();
+function neighbors(ieee) {
+  const r = [];
+  for (const p of PAIRS.values()) {
+    if (p.a !== ieee && p.b !== ieee) continue;
+    const o = p.a === ieee ? p.b : p.a;
+    const rel = p.rel[ieee + ">" + o] ?? p.rel[o + ">" + ieee];
+    const parent = p.rel[ieee + ">" + o] === 1 || p.rel[o + ">" + ieee] === 0;
+    const child = p.rel[ieee + ">" + o] === 0 || p.rel[o + ">" + ieee] === 1;
+    r.push({o, lqiIn: p.lqi[o + ">" + ieee], lqiOut: p.lqi[ieee + ">" + o], best: p.best, parent, child, d: dist(ieee, o)});
+  }
+  return r.sort((a, b) => (b.best ?? -1) - (a.best ?? -1));
+}
+
+// ---------- Auffaelligkeiten
+function issues() {
+  if (!st.net) return [];
+  const out = [];
+  const routers = [...st.dev.values()].filter(d => (d.t === "R" || d.t === "C") && st.pos[d.ieee]).map(d => d.ieee);
+  for (const d of st.dev.values()) {
+    if (d.t === "C" || !st.pos[d.ieee]) continue;
+    const nb = neighbors(d.ieee).filter(n => n.d != null);
+    let near = null;
+    for (const r of routers) { if (r === d.ieee) continue; const dd = dist(d.ieee, r); if (dd != null && (!near || dd < near.d)) near = {r, d: dd}; }
+    for (const n of nb) {
+      if (n.best != null && n.best < 80 && n.d < 4)
+        out.push({ieee: d.ieee, sev: n.best < 40 ? 2 : 1, text: `Schwache Verbindung zu ${nameOf(n.o)} trotz nur ${n.d.toFixed(1)} m (LQI ${n.best})`});
+    }
+    const best = nb.filter(n => n.best != null).sort((a, b) => b.best - a.best)[0];
+    if (best && near && best.o !== near.r && best.d > near.d + 5) {
+      const nearLink = nb.find(n => n.o === near.r);
+      out.push({ieee: d.ieee, sev: 1, text: `Beste Verbindung geht zu ${nameOf(best.o)} (${best.d.toFixed(1)} m), obwohl ${nameOf(near.r)} nur ${near.d.toFixed(1)} m entfernt ist` + (nearLink ? ` (LQI ${nearLink.best ?? "?"})` : " und nicht als Nachbar auftaucht")});
+    }
+    const par = nb.find(n => n.parent);
+    if (d.t === "E" && par && near && par.d > near.d + 5)
+      out.push({ieee: d.ieee, sev: 2, text: `Hängt an ${nameOf(par.o)} (${par.d.toFixed(1)} m), nächster Router wäre ${nameOf(near.r)} (${near.d.toFixed(1)} m)`});
+    if (d.t === "E" && !neighbors(d.ieee).length && st.net)
+      out.push({ieee: d.ieee, sev: 1, text: "Taucht in der Netzwerkkarte nicht auf (schläft oder ist weg)"});
+  }
+  return out.sort((a, b) => b.sev - a.sev);
+}
+
+// ---------- Darstellung
+function renderFloors() {
+  const nav = document.getElementById("floors");
+  nav.innerHTML = "";
+  for (const f of FLOORS) {
+    const n = Object.values(st.pos).filter(p => p.f === f.id).length;
+    const b = document.createElement("button");
+    b.innerHTML = `${esc(f.name)} <span class="n">${n}</span>`;
+    b.setAttribute("aria-pressed", String(st.floor === f.id));
+    b.onclick = () => { st.floor = f.id; renderPlan(); renderFloors(); renderList(); };
+    nav.appendChild(b);
+  }
+}
+
+let svgRoot = null;
+// Flurstueck 824 (Liegenschaftskarte 1:500): 15,6 m Strassenfront, 27,3/27,4 m tief, 430 m2.
+// Hausfront an der Strassengrenze (y = 0); die 0,17 m Rest der Breite sind je zur Haelfte verteilt.
+
+function drawGrundstueck(f) {
+  // EG: Garten, Grundstuecksgrenze und Strasse sind Teil des EG-Plans (viewBox reicht bis zur hinteren Grenze)
+  // Nordpfeil auf jeder Etage
+  const vb2 = svgRoot.viewBox.baseVal;
+  const cx = vb2.x + vb2.width - 60, cy = vb2.y + 70;
+  const n = el("g", {transform: `translate(${cx} ${cy}) rotate(${-(HAUS.nord ?? 0)})`}, svgRoot);
+  el("circle", {cx: 0, cy: 0, r: 34, fill: "#ffffff", stroke: "#4c5a52", "stroke-width": 1.5}, n);
+  el("path", {d: "M0,-28 L9,6 L0,0 L-9,6 Z", fill: "#c0392b"}, n);
+  el("path", {d: "M0,28 L9,-6 L0,0 L-9,-6 Z", fill: "#9aa6a0"}, n);
+  const nt = el("text", {x: 0, y: -38, "text-anchor": "middle", "font-size": 15, "font-weight": 700, fill: "#c0392b", transform: `rotate(${HAUS.nord ?? 0} 0 -38)`}, n);
+  nt.textContent = "N";
+}
+
+function renderPlan() {
+  const f = FL[st.floor];
+  const host = document.getElementById("plan");
+  host.innerHTML = PLANS[f.svg] || `<div class="empty" style="padding:40px">${PROJ.path || PROJ.loaded ? "Für diese Etage ist kein Grundriss in der Plan-Datei." : "Öffne eine Plan-Datei (Strg+O) oder ziehe sie in dieses Fenster."}</div>`;
+  svgRoot = host.querySelector("svg");
+  if (!svgRoot) return;
+  if (f.dim) {
+    const g = el("rect", {x: 0, y: 0, width: "100%", height: "100%", fill: "#ffffff", "fill-opacity": .72}, svgRoot);
+    const t = el("text", {x: OX + 4.0 * S, y: OY - 30, "text-anchor": "middle", "font-size": 22, "font-weight": 700, fill: "#5f6b66"}, svgRoot);
+    t.textContent = f.hinweis || f.name;
+  }
+  drawGrundstueck(f);
+  el("g", {id: "ov"}, svgRoot);
+  svgRoot.addEventListener("click", onPlanClick);
+  document.getElementById("planwrap").style.setProperty("--zoom", st.zoom);
+  renderOverlay();
+}
+
+function marker(g, ieee, x, y, ghost) {
+  const t = typeOf(ieee);
+  const col = t === "C" ? "var(--coord)" : t === "E" ? "var(--end)" : t === "R" ? "var(--router)" : "var(--unk)";
+  const m = el("g", {class: "mk", tabindex: 0, role: "button", "aria-label": nameOf(ieee), style: "cursor:pointer"}, g);
+  if (st.sel === ieee) el("circle", {cx: x, cy: y, r: 17, fill: "none", stroke: "var(--accent)", "stroke-width": 4}, m);
+  const common = {fill: ghost ? "#fff" : col, stroke: ghost ? col : "#fff", "stroke-width": ghost ? 2.5 : 2, "stroke-dasharray": ghost ? "4 3" : ""};
+  if (t === "E") el("rect", {x: x - 8, y: y - 8, width: 16, height: 16, rx: 3, ...common}, m);
+  else if (t === "C") el("path", {d: `M${x},${y - 13} L${x + 12},${y + 9} L${x - 12},${y + 9} Z`, ...common}, m);
+  else el("circle", {cx: x, cy: y, r: 10, ...common}, m);
+  const av = liveAvail(ieee);
+  if (av === "offline") el("path", {d: `M${x - 7},${y - 7} L${x + 7},${y + 7} M${x + 7},${y - 7} L${x - 7},${y + 7}`, stroke: "#fff", "stroke-width": 4.5, "stroke-linecap": "round"}, m),
+    el("path", {d: `M${x - 7},${y - 7} L${x + 7},${y + 7} M${x + 7},${y - 7} L${x - 7},${y + 7}`, stroke: "var(--bad)", "stroke-width": 2.5, "stroke-linecap": "round"}, m);
+  if (st.labels || st.sel === ieee || ghost) {
+    const tx = el("text", {x: x, y: y + 24, "text-anchor": "middle", "font-size": 12, "font-weight": st.sel === ieee ? 700 : 500, fill: "#1d2421", stroke: "#fff", "stroke-width": 3, "paint-order": "stroke"}, m);
+    tx.textContent = nameOf(ieee) + (ghost ? ` (${FL[st.pos[ieee].f].name})` : "");
+  }
+  m.addEventListener("click", e => { e.stopPropagation(); select(ieee); });
+  m.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(ieee); } });
+}
+
+function renderOverlay() {
+  if (!svgRoot) return;
+  const g = svgRoot.querySelector("#ov");
+  g.innerHTML = "";
+  const here = Object.entries(st.pos).filter(([, p]) => p.f === st.floor).map(([i]) => i);
+  const hereSet = new Set(here);
+  const ghosts = new Set();
+  if (st.links && st.net) {
+    for (const p of PAIRS.values()) {
+      const pa = st.pos[p.a], pb = st.pos[p.b];
+      if (!pa || !pb) continue;
+      const selPair = st.sel && (p.a === st.sel || p.b === st.sel);
+      if (st.sel && !selPair) continue;
+      const aHere = hereSet.has(p.a), bHere = hereSet.has(p.b);
+      if (!aHere && !bHere) continue;
+      if (!(aHere && bHere) && !selPair) continue;
+      if (!aHere) ghosts.add(p.a); if (!bHere) ghosts.add(p.b);
+      const [x1, y1] = toPx(pa.x, pa.y), [x2, y2] = toPx(pb.x, pb.y);
+      el("line", {x1, y1, x2, y2, stroke: lqiColor(p.best), "stroke-width": selPair ? 3.5 : 1.6,
+        "stroke-opacity": selPair ? .95 : .5, "stroke-dasharray": aHere && bHere ? "" : "7 5"}, g);
+      if (selPair) {
+        const tx = el("text", {x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle", "font-size": 12, "font-family": "IBM Plex Mono, monospace", fill: "#1d2421", stroke: "#fff", "stroke-width": 3, "paint-order": "stroke"}, g);
+        tx.textContent = p.best ?? "?";
+      }
+    }
+  }
+  for (const i of ghosts) { const p = st.pos[i]; const [x, y] = toPx(p.x, p.y); marker(g, i, x, y, true); }
+  for (const i of here) { if (i === st.sel) continue; const p = st.pos[i]; const [x, y] = toPx(p.x, p.y); marker(g, i, x, y, false); }
+  if (st.sel && hereSet.has(st.sel)) { const p = st.pos[st.sel]; const [x, y] = toPx(p.x, p.y); marker(g, st.sel, x, y, false); }
+  for (const [id, d] of Object.entries(st.lan)) {
+    if (d.f !== st.floor) continue;
+    const [x, y] = toPx(d.x, d.y);
+    const m = el("g", {style: "cursor:pointer", role: "button", "aria-label": d.label || "Netzwerkdose"}, g);
+    if (st.lanSel === id) el("rect", {x: x - 15, y: y - 15, width: 30, height: 30, rx: 5, fill: "none", stroke: "var(--accent)", "stroke-width": 3}, m);
+    el("rect", {x: x - 10, y: y - 10, width: 20, height: 20, rx: 3, fill: "var(--lan)", stroke: "#fff", "stroke-width": 2}, m);
+    el("path", {d: `M${x - 5},${y + 4} v-5 h3 v-3 h4 v3 h3 v5 z`, fill: "#fff"}, m);
+    const tx = el("text", {x, y: y + 24, "text-anchor": "middle", "font-size": 12, "font-weight": 600, fill: "#5a2a78", stroke: "#fff", "stroke-width": 3, "paint-order": "stroke"}, m);
+    tx.textContent = d.label || "LAN";
+    m.addEventListener("click", e => { e.stopPropagation(); if (st.lanMode) return; st.lanSel = st.lanSel === id ? null : id; renderOverlay(); renderLan(); });
+  }
+
+  if (st.gx) for (const [k, d] of GERAETE.entries()) {
+    if (d.f !== st.floor) continue;
+    const [x, y] = toPx(d.x, d.y); const col = PROTO[d.proto]?.[1] || "#7a837f";
+    const src = d.von && Object.entries(st.pos).find(([i]) => nameOf(i) === d.von || nameOf(i) === d.von.replace(/^Steckdose /, ""));
+    const srcG = d.von && GERAETE.find(o => o.name === d.von);
+    const sp = src ? st.pos[src[0]] : srcG;
+    if (sp && sp.f === d.f && (st.gsel === k || st.links)) { const [sx, sy] = toPx(sp.x, sp.y); el("line", {x1: sx, y1: sy, x2: x, y2: y, stroke: col, "stroke-width": st.gsel === k ? 2.5 : 1.2, "stroke-dasharray": "2 4", "stroke-opacity": .8}, g); }
+    const m = el("g", {style: "cursor:pointer", role: "button", tabindex: 0, "aria-label": d.name}, g);
+    if (st.gsel === k) el("circle", {cx: x, cy: y, r: 16, fill: "none", stroke: "var(--accent)", "stroke-width": 3}, m);
+    const hist = d.status === "historisch", plan = d.status === "geplant";
+    el("path", {d: `M${x},${y - 10} L${x + 10},${y} L${x},${y + 10} L${x - 10},${y} Z`, fill: hist ? "#d6d9d7" : plan ? "#fff" : col, stroke: hist ? "#8a938f" : plan ? col : "#fff", "stroke-width": plan ? 2.4 : 1.6, "stroke-dasharray": plan ? "3 2" : ""}, m);
+    if (hist) el("path", {d: `M${x - 5},${y - 5} L${x + 5},${y + 5} M${x + 5},${y - 5} L${x - 5},${y + 5}`, stroke: "#5f6b66", "stroke-width": 1.6}, m);
+    if (st.labels || st.gsel === k) { const tx = el("text", {x, y: y - 14, "text-anchor": "middle", "font-size": 11, "font-weight": st.gsel === k ? 700 : 500, fill: hist ? "#5f6b66" : col, stroke: "#fff", "stroke-width": 3, "paint-order": "stroke"}, m); tx.textContent = d.name + (plan ? " (geplant)" : hist ? " (historisch)" : ""); }
+    const pick = e => { e.stopPropagation(); st.gsel = st.gsel === k ? null : k; renderOverlay(); renderGx(); };
+    m.addEventListener("click", pick); m.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") pick(e); });
+  }
+  const hint = document.getElementById("hint");
+  const wrap = document.getElementById("planwrap");
+  wrap.classList.toggle("placing", st.placing || st.lanMode);
+  hint.hidden = !(st.placing || st.lanMode);
+  if (st.placing) hint.textContent = `Klicke im Plan (${FL[st.floor].name}) auf den Einbauort von „${nameOf(st.sel)}“`;
+  else if (st.lanMode) hint.textContent = `Klicke im Plan (${FL[st.floor].name}) auf jede Netzwerkdose. Fertig: „Dose setzen“ ausschalten oder Esc.`;
+}
+
+function renderList() {
+  const list = document.getElementById("list");
+  const q = st.q.toLowerCase();
+  let items = [...st.dev.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
+  if (q) items = items.filter(d => d.name.toLowerCase().includes(q) || d.ieee.includes(q));
+  if (st.filter === "open") items = items.filter(d => !st.pos[d.ieee]);
+  if (st.filter === "floor") items = items.filter(d => st.pos[d.ieee]?.f === st.floor);
+  list.innerHTML = items.length ? "" : `<div class="empty">${st.filter === "open" ? "Alle Geräte sind platziert." : "Keine Treffer."}</div>`;
+  for (const d of items) {
+    const r = document.createElement("div");
+    r.className = "dev"; r.tabIndex = 0; r.setAttribute("role", "option");
+    r.setAttribute("aria-selected", String(st.sel === d.ieee));
+    r.innerHTML = `<i class="dot ${d.t}"></i><span class="nm">${esc(d.name)}${liveAvail(d.ieee) === "offline" ? ' <span class="off">offline</span>' : ""}</span><span class="fl">${st.pos[d.ieee] ? esc(FL[st.pos[d.ieee].f].name) : "–"}</span>`;
+    r.onclick = () => select(d.ieee, true);
+    r.onkeydown = e => { if (e.key === "Enter") select(d.ieee, true); };
+    list.appendChild(r);
+  }
+  document.getElementById("stPlaced").textContent = Object.keys(st.pos).length;
+  document.getElementById("stAll").textContent = st.dev.size;
+  document.getElementById("stNet").textContent = st.net ? new Date(st.net.ts).toLocaleString("de-DE", {dateStyle: "short", timeStyle: "short"}) : "fehlt";
+}
+
+function renderSel() {
+  const c = document.getElementById("selCard");
+  if (!st.sel) { c.hidden = true; return; }
+  c.hidden = false;
+  const d = st.dev.get(st.sel), p = st.pos[st.sel];
+  const tname = {C: "Koordinator", R: "Router", E: "Batteriegerät", U: "unbekannt"}[d.t];
+  let h = `<h2>Ausgewählt</h2><h3>${esc(d.name)}</h3><div class="mono">${esc(d.ieee)} · ${tname}</div>`;
+  if (ZINFO[d.name]) h += `<div class="note">${esc(ZINFO[d.name])}</div>`;
+  { const sw = GERAETE.filter(o => o.von === d.name || o.von === "Steckdose " + d.name); if (sw.length) h += `<div class="note">Versorgt/schaltet: ${sw.map(o => esc(o.name) + (o.status !== "aktiv" ? " (" + o.status + ")" : "")).join(", ")}</div>`; }
+  h += liveInfo(d);
+  h += `<div class="mono" style="margin-top:4px">${p ? `${esc(FL[p.f].name)} · x ${p.x.toFixed(2)} m · y ${p.y.toFixed(2)} m · Höhe ${HK[p.hk || "mid"][0]}` : "noch nicht platziert"}</div>`;
+  if (p) h += `<div class="chips" id="hks" aria-label="Einbauhöhe">${Object.entries(HK).map(([k, [t]]) => `<button data-hk="${k}" aria-pressed="${(p.hk || "mid") === k}">${t}</button>`).join("")}</div>`;
+  h += `<div class="row" style="margin-top:10px">`;
+  h += st.placing ? `<button class="btn" id="bCancel">Abbrechen</button>` : `<button class="btn primary" id="bPlace">${p ? "Neu setzen" : "Platzieren"}</button>`;
+  if (p) h += `<button class="btn danger" id="bDel">Entfernen</button>`;
+  h += `<button class="btn" id="bClose">Schließen</button></div>`;
+  if (st.net) {
+    const nb = neighbors(st.sel);
+    if (!nb.length) h += `<div class="note">In der Netzwerkkarte ohne Nachbarn. Batteriegeräte erscheinen dort nur, wenn ein Router sie als Kind führt.</div>`;
+    else {
+      h += `<div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>Nachbar</th><th style="text-align:right">LQI</th><th style="text-align:right">Abstand</th></tr></thead><tbody>`;
+      for (const n of nb) {
+        const tag = n.parent ? " · Elternteil" : n.child ? " · Kind" : "";
+        const lq = [n.lqiIn, n.lqiOut].filter(v => v != null);
+        h += `<tr><td><a href="#" data-sel="${n.o}" style="color:inherit">${esc(nameOf(n.o))}</a><span class="mono">${tag}</span></td>`;
+        h += `<td class="n">${lq.map(v => `<span class="lqi" style="background:${lqiColor(v)}">${v}</span>`).join(" ")}</td>`;
+        h += `<td class="n">${n.d != null ? n.d.toFixed(1) + " m" : "–"}</td></tr>`;
+      }
+      h += `</tbody></table></div><div class="note">LQI: Empfangsqualität 0–255, je Richtung. Abstand räumlich, mit Etage und Einbauhöhe; nur wenn beide Geräte platziert sind.</div>`;
+    }
+    for (const i of issues().filter(i => i.ieee === st.sel)) h += `<div class="flag ${i.sev > 1 ? "bad" : ""}">${esc(i.text)}</div>`;
+  } else h += `<div class="note">Mit der Netzwerkkarte siehst du hier die Funknachbarn dieses Geräts.</div>`;
+  c.innerHTML = h;
+  c.querySelector("#bPlace")?.addEventListener("click", () => { st.placing = true; renderSel(); renderOverlay(); });
+  c.querySelector("#bCancel")?.addEventListener("click", () => { st.placing = false; renderSel(); renderOverlay(); });
+  c.querySelector("#bDel")?.addEventListener("click", () => removePos(st.sel));
+  c.querySelectorAll("#hks button").forEach(b => b.addEventListener("click", () => { const p = st.pos[st.sel]; if (p && p.hk !== b.dataset.hk) setPos(st.sel, {...p, hk: b.dataset.hk}); }));
+  c.querySelector("#bClose")?.addEventListener("click", () => { st.sel = null; st.placing = false; renderAll(); });
+  c.querySelectorAll("[data-sel]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); select(a.dataset.sel, true); }));
+}
+
+
+function renderGx() {
+  const box = document.getElementById("gxList"); if (!box) return;
+  const fil = st.gfil;
+  let items = [...GERAETE.entries()].filter(([, d]) => fil === "alle" || d.proto === fil || d.status === fil);
+  items.sort((a, b) => FLOORS.findIndex(f => f.id === a[1].f) - FLOORS.findIndex(f => f.id === b[1].f) || a[1].name.localeCompare(b[1].name, "de"));
+  box.innerHTML = items.map(([k, d]) => `<div class="dev" data-g="${k}" tabindex="0" aria-selected="${st.gsel === k}"><i class="gd" style="background:${d.status === "historisch" ? "#d6d9d7" : d.status === "geplant" ? "#fff" : PROTO[d.proto]?.[1]};border-color:${PROTO[d.proto]?.[1]}"></i><span class="nm">${esc(d.name)}${d.status !== "aktiv" ? ` <span class="mono">· ${d.status}</span>` : ""}</span><span class="fl">${esc(FL[d.f].name)} · ${esc(PROTO[d.proto]?.[0] || d.proto)}</span></div>`).join("") || `<div class="empty">Keine Treffer.</div>`;
+  box.querySelectorAll("[data-g]").forEach(r => { const go = () => { const k = +r.dataset.g; st.gsel = k; st.floor = GERAETE[k].f; renderPlan(); renderFloors(); renderGx(); }; r.onclick = go; r.onkeydown = e => { if (e.key === "Enter") go(); }; });
+  const info = document.getElementById("gxInfo");
+  if (st.gsel == null) { info.innerHTML = ""; return; }
+  const d = GERAETE[st.gsel];
+  info.innerHTML = `<div class="sel" style="margin-top:8px"><h3>${esc(d.name)}</h3><div class="mono">${esc(PROTO[d.proto]?.[0] || d.proto)} · ${esc(d.integ)} · ${esc(d.status)}</div><div class="mono">${esc(FL[d.f].name)} · x ${d.x.toFixed(2)} · y ${d.y.toFixed(2)} · Höhe ${d.z.toFixed(2)} m</div>${d.von ? `<div class="note">Strom/Schaltung über „${esc(d.von)}“</div>` : ""}${d.note ? `<div class="note">${esc(d.note)}</div>` : ""}</div>`;
+}
+
+function renderIssues() {
+  const card = document.getElementById("issueCard"), box = document.getElementById("issues");
+  if (!st.net) { card.hidden = true; return; }
+  const all = issues();
+  card.hidden = false;
+  box.innerHTML = all.length ? "" : `<div class="empty">Keine Auffälligkeiten unter den platzierten Geräten.</div>`;
+  for (const i of all.slice(0, 40)) {
+    const r = document.createElement("div");
+    r.className = "issue"; r.tabIndex = 0;
+    r.innerHTML = `<span class="sev ${i.sev > 1 ? "bad" : ""}"></span><span><b>${esc(nameOf(i.ieee))}</b><br>${esc(i.text)}</span>`;
+    r.onclick = () => select(i.ieee, true);
+    box.appendChild(r);
+  }
+}
+
+function renderLan() {
+  const box = document.getElementById("lanList");
+  const items = Object.entries(st.lan).sort((a, b) => FLOORS.findIndex(f => f.id === a[1].f) - FLOORS.findIndex(f => f.id === b[1].f) || (a[1].label || "").localeCompare(b[1].label || "", "de"));
+  document.getElementById("lanCount").textContent = items.length ? `${items.length} eingezeichnet` : "noch keine";
+  const add = document.getElementById("lanAdd");
+  add.classList.toggle("on", st.lanMode); add.setAttribute("aria-pressed", String(st.lanMode));
+  add.textContent = st.lanMode ? "Fertig" : "Dose setzen";
+  box.innerHTML = "";
+  for (const [id, d] of items) {
+    const r = document.createElement("div");
+    r.className = "lanrow"; r.setAttribute("aria-selected", String(st.lanSel === id));
+    r.innerHTML = `<i class="sq"></i><input type="text" id="ln${id}" aria-label="Bezeichnung"><span class="mono">${esc(FL[d.f].name)}</span><button class="btn danger" title="Löschen" style="padding:2px 8px">×</button>
+      <div class="chips">${Object.entries(HK).map(([k, [t]]) => `<button data-hk="${k}" aria-pressed="${(d.hk || "low") === k}">${t}</button>`).join("")}</div>`;
+    const inp = r.querySelector("input"); inp.value = d.label || "";
+    inp.addEventListener("change", () => saveLan(id, {...st.lan[id], label: inp.value.trim()}));
+    inp.addEventListener("focus", () => { st.lanSel = id; if (st.floor !== d.f) { st.floor = d.f; renderFloors(); renderPlan(); } else renderOverlay(); });
+    r.querySelector(".btn.danger").addEventListener("click", () => delLan(id));
+    r.querySelectorAll(".chips button").forEach(b => b.addEventListener("click", () => saveLan(id, {...st.lan[id], hk: b.dataset.hk})));
+    box.appendChild(r);
+  }
+}
+async function saveLan(id, d) {
+  st.lan[id] = d; renderLan(); renderOverlay();
+  changed();
+}
+async function delLan(id) {
+  delete st.lan[id]; if (st.lanSel === id) st.lanSel = null; renderLan(); renderOverlay();
+  changed();
+}
+document.getElementById("lanAdd").addEventListener("click", () => { st.lanMode = !st.lanMode; if (st.lanMode) { st.placing = false; renderSel(); } renderLan(); renderOverlay(); });
+
+function renderAll() { PAIRS = pairs(); renderFloors(); renderPlan(); renderList(); renderSel(); renderIssues(); renderLan(); }
+
+// ---------- Aktionen
+function select(ieee, jump) {
+  st.sel = ieee;
+  st.placing = !st.pos[ieee];
+  if (jump && st.pos[ieee]) st.floor = st.pos[ieee].f;
+  renderFloors(); renderPlan(); renderList(); renderSel();
+}
+
+function onPlanClick(e) {
+  if (st.lanMode) {
+    const pt = svgRoot.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const sp = pt.matrixTransform(svgRoot.getScreenCTM().inverse());
+    const [x, y] = toM(sp.x, sp.y);
+    const id = "d" + Date.now().toString(36);
+    const n = Object.values(st.lan).filter(d => d.f === st.floor).length + 1;
+    st.lanSel = id;
+    saveLan(id, {f: st.floor, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, hk: "low", label: `${FL[st.floor].name} ${n}`});
+    return;
+  }
+  if (!st.placing || !st.sel) return;
+  const pt = svgRoot.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const sp = pt.matrixTransform(svgRoot.getScreenCTM().inverse());
+  const [x, y] = toM(sp.x, sp.y);
+  const old = st.pos[st.sel];
+  setPos(st.sel, {f: st.floor, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, hk: old?.hk || guessHk(nameOf(st.sel))});
+}
+
+async function setPos(ieee, p) {
+  st.pos[ieee] = p; st.placing = false;
+  renderAll();
+  changed();
+}
+async function removePos(ieee) {
+  delete st.pos[ieee]; st.placing = false;
+  renderAll();
+  changed();
+}
+function note(t) { document.getElementById("storeNote").textContent = t; }
+
+// Netzwerkkarte (raw-Format von Zigbee2MQTT) kompakt machen
+function compactNet(raw) {
+  const v = raw.data?.value || raw.value || raw;
+  if (!Array.isArray(v.nodes) || !Array.isArray(v.links)) throw new Error("Keine Netzwerkkarte (nodes/links fehlen)");
+  const nodes = v.nodes.map(n => [String(n.ieeeAddr || n.ieee_address).toLowerCase(), n.friendlyName || n.friendly_name || "", n.type || "", n.networkAddress ?? n.network_address ?? null]);
+  const links = v.links.map(l => [String(l.source?.ieeeAddr || l.sourceIeeeAddr).toLowerCase(), String(l.target?.ieeeAddr || l.targetIeeeAddr).toLowerCase(),
+    l.lqi ?? l.linkquality ?? null, typeof l.relationship === "number" ? l.relationship : null, l.depth ?? null]);
+  return {ts: Date.now(), nodes, links};
+}
+function applyNet(n) {
+  st.net = n;
+  for (const [ieee, name, type] of n.nodes) {
+    const t = type === "Coordinator" ? "C" : type === "Router" ? "R" : type === "EndDevice" ? "E" : null;
+    const d = st.dev.get(ieee);
+    if (d) { if (t) d.t = t; if (name && t !== "C") d.name = name; }
+    else st.dev.set(ieee, {ieee, name: name || ieee, t: t || "U"});
+  }
+}
+
+document.getElementById("q").addEventListener("input", e => { st.q = e.target.value; renderList(); });
+document.getElementById("chips").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  st.filter = b.dataset.f;
+  document.querySelectorAll("#chips button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  renderList();
+});
+document.getElementById("zin").onclick = () => { st.zoom = Math.min(3, st.zoom + .25); document.getElementById("planwrap").style.setProperty("--zoom", st.zoom); };
+document.getElementById("zout").onclick = () => { st.zoom = Math.max(.75, st.zoom - .25); document.getElementById("planwrap").style.setProperty("--zoom", st.zoom); };
+document.getElementById("lbl").onclick = e => { st.labels = !st.labels; e.target.setAttribute("aria-pressed", String(st.labels)); renderOverlay(); };
+document.getElementById("lnk").onclick = e => { st.links = !st.links; e.target.setAttribute("aria-pressed", String(st.links)); renderOverlay(); };
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (st.lanMode) { st.lanMode = false; renderLan(); renderOverlay(); }
+  if (st.placing) { st.placing = false; renderSel(); renderOverlay(); }
+});
+
+(function initGx() {
+  const chips = document.getElementById("gxChips");
+  const opts = [["alle", "Alle"], ["wlan", "WLAN"], ["lan", "LAN"], ["duofern", "DuoFern"], ["homematic", "HomeMatic"], ["dect", "DECT"], ["zigbee", "Zigbee"], ["geplant", "geplant"], ["historisch", "historisch"]];
+  chips.innerHTML = opts.map(([k, t]) => `<button data-k="${k}" aria-pressed="${st.gfil === k}">${t}</button>`).join("");
+  chips.querySelectorAll("button").forEach(b => b.onclick = () => { st.gfil = b.dataset.k; chips.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); renderGx(); });
+  const gb = document.getElementById("gxb");
+  gb.onclick = () => { st.gx = !st.gx; gb.setAttribute("aria-pressed", String(st.gx)); renderOverlay(); };
+  renderGx();
+})();
+
+// =====================================================================================
+// Plan-Datei (*.zplan.json): Laden, Bearbeiten, Speichern (Programm) – Live-Daten (MQTT)
+// =====================================================================================
+const HP = window.hp_open ? window : null;          // Bindungen des Windows-Programms (Go/WebView2)
+const PROJ = {path: null, loaded: false, dirty: false, saving: null, timer: null, extra: {}};
+
+function changed() {
+  PROJ.dirty = true; showFile();
+  clearTimeout(PROJ.timer);
+  if (PROJ.path && HP) PROJ.timer = setTimeout(save, 700);    // automatisch in die geoeffnete Datei
+}
+function showFile() {
+  const n = PROJ.path ? PROJ.path.split(/[\\/]/).pop() : (PROJ.loaded ? "(ohne Dateinamen)" : "keine Plan-Datei");
+  document.getElementById("fileInfo").textContent = (PROJ.dirty ? "● " : "") + n + (PROJ.dirty ? (PROJ.path ? " – wird gespeichert …" : " – nicht gespeichert") : "");
+  document.getElementById("fileInfo").title = PROJ.path || "";
+  document.title = "Zigbee-Hausplan – " + n + (PROJ.dirty ? " *" : "");
+}
+
+function projectJson() {
+  return JSON.stringify({
+    format: "zigbee-hausplan", version: 1, stand: new Date().toISOString(),
+    ...PROJ.extra,
+    haus: HAUS, plans: PLANS,
+    devices: [...st.dev.values()].map(d => [d.ieee, d.name, d.t]),
+    geraete: GERAETE, zinfo: ZINFO, pos: st.pos, lan: st.lan, net: st.net,
+  });
+}
+function loadProject(text, path) {
+  const P = JSON.parse(text);
+  if (P.format !== "zigbee-hausplan") {
+    // vielleicht eine Netzwerkkarte?
+    loadNet(P); return;
+  }
+  const {format, version, stand, haus, plans, devices, geraete, zinfo, pos, lan, net, ...rest} = P;
+  PROJ.extra = rest;
+  setHaus(haus);
+  PLANS = plans || {}; GERAETE = geraete || []; ZINFO = zinfo || {};
+  st.dev = new Map((devices || []).map(([ieee, name, t]) => [ieee, {ieee, name, t}]));
+  st.pos = {}; for (const [k, v] of Object.entries(pos || {})) if (v && FL[v.f]) st.pos[k] = {f: v.f, x: +v.x, y: +v.y, hk: HK[v.hk] ? v.hk : "mid"};
+  st.lan = {}; for (const [k, v] of Object.entries(lan || {})) if (v && FL[v.f]) st.lan[k] = {f: v.f, x: +v.x, y: +v.y, hk: HK[v.hk] ? v.hk : "low", label: v.label || ""};
+  st.net = null; if (net) applyNet(net);
+  st.sel = null; st.gsel = null; st.lanSel = null; st.placing = false; st.lanMode = false;
+  if (!FL[st.floor]) st.floor = FL[HAUS.startEtage] ? HAUS.startEtage : FLOORS[0]?.id;
+  PROJ.path = path || null; PROJ.loaded = true; PROJ.dirty = false;
+  if (st.live.on) applyBridgeDevices(st.live.devices);
+  showFile(); renderAll(); renderGx(); renderLive();
+  note(`Plan geladen: ${st.dev.size} Zigbee-Geräte, ${Object.keys(st.pos).length} platziert, ${GERAETE.length} weitere Geräte.`);
+  if (path && HP) HP.hp_setLast(path);
+}
+function loadNet(raw, quelle) {
+  const n = compactNet(raw);
+  applyNet(n); renderAll();
+  note(`Netzwerkkarte ${quelle || "geladen"}: ${n.nodes.length} Geräte, ${n.links.length} Verbindungen.`);
+  if (PROJ.loaded) changed();
+}
+
+async function save() {
+  if (!PROJ.loaded) return;
+  if (!PROJ.path) return saveAs();
+  if (PROJ.saving) { await PROJ.saving; if (!PROJ.dirty) return; }
+  const txt = projectJson();
+  PROJ.saving = HP.hp_save(PROJ.path, txt).then(() => { PROJ.dirty = false; }, e => note("Speichern fehlgeschlagen: " + e))
+    .finally(() => { PROJ.saving = null; showFile(); });
+  return PROJ.saving;
+}
+async function saveAs() {
+  if (!PROJ.loaded) return;
+  const txt = projectJson();
+  if (!HP) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], {type: "application/json"})); a.download = "Hausplan.zplan.json"; a.click(); PROJ.dirty = false; showFile(); return; }
+  try {
+    const p = await HP.hp_saveAs(PROJ.path || "Hausplan.zplan.json", txt);
+    if (p) { PROJ.path = p; PROJ.dirty = false; HP.hp_setLast(p); showFile(); note("Gespeichert: " + p); }
+  } catch (e) { note("Speichern fehlgeschlagen: " + e); }
+}
+async function openDialog() {
+  if (!HP) return document.getElementById("pickFile").click();
+  try { const r = await HP.hp_open("plan"); if (r) loadProject(r.content, r.path); }
+  catch (e) { note("Datei nicht lesbar: " + (e.message || e)); }
+}
+async function openNetDialog() {
+  if (!HP) return document.getElementById("pickFile").click();
+  try { const r = await HP.hp_open("netz"); if (r) loadNet(JSON.parse(r.content), "aus " + r.path.split(/[\\/]/).pop()); }
+  catch (e) { note("Netzwerkkarte nicht lesbar: " + (e.message || e)); }
+}
+function openText(text, name) {
+  try {
+    const P = JSON.parse(text);
+    if (P.format === "zigbee-hausplan") {
+      if (PROJ.dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
+      loadProject(text, null);
+      note("Plan aus „" + name + "“ geladen. Zum Speichern „Speichern unter …“ wählen.");
+    } else loadNet(P, "aus " + name);
+  } catch (e) { note(`„${name}“ nicht lesbar: ${e.message || e}`); }
+}
+
+document.getElementById("bOpen").onclick = openDialog;
+document.getElementById("bSave").onclick = save;
+document.getElementById("bSaveAs").onclick = saveAs;
+document.getElementById("bNet").onclick = openNetDialog;
+document.getElementById("pickFile").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (f) openText(await f.text(), f.name); e.target.value = "";
+});
+// Ziehen & Ablegen: Plan-Datei oder Netzwerkkarte
+addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("drop"); });
+addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("drop"); });
+addEventListener("drop", async e => {
+  e.preventDefault(); document.body.classList.remove("drop");
+  const f = e.dataTransfer.files[0]; if (f) openText(await f.text(), f.name);
+});
+document.addEventListener("keydown", e => {
+  if (!e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "s") { e.preventDefault(); e.shiftKey ? saveAs() : save(); }
+  if (k === "o") { e.preventDefault(); openDialog(); }
+});
+addEventListener("beforeunload", e => { if (PROJ.dirty && !PROJ.path) { e.preventDefault(); e.returnValue = ""; } });
+
+// ---------------------------------------------------------------------------- Live
+function liveAvail(ieee) { return st.live.on ? st.live.avail[nameOf(ieee)] : undefined; }
+function ago(ts) {
+  const s = Math.round((Date.now() - ts) / 1000);
+  return s < 90 ? `vor ${s} s` : s < 5400 ? `vor ${Math.round(s / 60)} min` : `vor ${Math.round(s / 3600)} h`;
+}
+function liveInfo(d) {
+  if (!st.live.on) return "";
+  const av = st.live.avail[d.name], l = st.live.lqi[d.name];
+  const parts = [];
+  if (av) parts.push(`<span class="${av === "offline" ? "off" : "on"}">${av}</span>`);
+  if (l) parts.push(`LQI ${l[0] ?? "?"} (${ago(l[1])})`);
+  return parts.length ? `<div class="mono" style="margin-top:4px">Live: ${parts.join(" · ")}</div>` : "";
+}
+function applyBridgeDevices(list) {
+  if (!Array.isArray(list)) return;
+  let neu = 0, umb = 0;
+  for (const x of list) {
+    const ieee = String(x.ieee_address || "").toLowerCase(); if (!ieee) continue;
+    const t = x.type === "Coordinator" ? "C" : x.type === "Router" ? "R" : x.type === "EndDevice" ? "E" : "U";
+    const d = st.dev.get(ieee);
+    if (!d) { st.dev.set(ieee, {ieee, name: x.friendly_name || ieee, t}); neu++; }
+    else {
+      if (t !== "C" && x.friendly_name && d.name !== x.friendly_name) { d.name = x.friendly_name; umb++; }
+      if (t !== "U" && d.t !== t) d.t = t;
+    }
+  }
+  const z2m = new Set(list.map(x => String(x.ieee_address || "").toLowerCase()));
+  st.live.fehlen = [...st.dev.keys()].filter(i => !z2m.has(i));
+  if ((neu || umb) && PROJ.loaded) { changed(); note(`Aus Zigbee2MQTT: ${neu} neue Geräte, ${umb} umbenannt.`); }
+}
+let liveRender = null;
+function renderLiveSoon() {               // Live-Daten treffen laufend ein: hoechstens alle 2 s neu zeichnen
+  if (liveRender) return;
+  liveRender = setTimeout(() => { liveRender = null; renderOverlay(); renderList(); renderSel(); renderLive(); }, 2000);
+}
+function renderLive() {
+  const L = st.live;
+  document.getElementById("liveDot").className = "ldot" + (L.on ? " on" : L.busy ? " busy" : "");
+  document.getElementById("liveState").textContent = L.text || (L.on ? "verbunden" : "nicht verbunden");
+  document.getElementById("bConnect").textContent = L.on || L.busy ? "Trennen" : "Verbinden";
+  document.getElementById("bMap").disabled = !L.on || L.mapBusy;
+  document.getElementById("bMap").textContent = L.mapBusy ? "Netzwerkkarte wird erstellt …" : "Netzwerkkarte abrufen";
+  const box = document.getElementById("liveStat");
+  if (!L.on) { box.innerHTML = ""; return; }
+  const vals = [...st.dev.values()].filter(d => d.t !== "C").map(d => L.avail[d.name]);
+  const on = vals.filter(v => v === "online").length, off = vals.filter(v => v === "offline").length;
+  let h = `<div>Online <b>${on}</b></div><div>Offline <b style="color:${off ? "var(--bad)" : "inherit"}">${off}</b></div>`;
+  if (L.fehlen?.length) h += `<div title="${esc(L.fehlen.map(nameOf).join(", "))}">Nicht mehr in Z2M <b>${L.fehlen.length}</b></div>`;
+  box.innerHTML = h;
+}
+window.hpEvent = ev => {                  // vom Programm (Go) aufgerufen
+  const L = st.live;
+  switch (ev.type) {
+    case "status":
+      L.on = !!ev.connected; L.busy = !!ev.busy; L.text = ev.text;
+      if (!L.on) { L.avail = {}; L.lqi = {}; L.fehlen = null; L.mapBusy = false; }
+      renderLive(); renderOverlay(); renderList(); renderSel(); break;
+    case "devices":
+      L.devices = ev.list; applyBridgeDevices(ev.list); renderLiveSoon(); break;
+    case "live":
+      Object.assign(L.avail, ev.avail || {});
+      for (const [n, v] of Object.entries(ev.lqi || {})) L.lqi[n] = v;
+      renderLiveSoon(); break;
+    case "networkmap":
+      L.mapBusy = false;
+      if (ev.error) note("Netzwerkkarte fehlgeschlagen: " + ev.error);
+      else try { loadNet(ev.raw, "live von Zigbee2MQTT"); } catch (e) { note("Netzwerkkarte nicht lesbar: " + e.message); }
+      renderLive(); break;
+  }
+};
+function liveForm() {
+  const f = document.getElementById("liveForm");
+  return {host: f.host.value.trim(), port: +f.port.value || 1883, user: f.user.value.trim(), pass: f.pass.value, base: f.base.value.trim() || "zigbee2mqtt"};
+}
+document.getElementById("bConnect").onclick = async () => {
+  if (!HP) return note("Live-Verbindung gibt es nur im Windows-Programm.");
+  const L = st.live;
+  if (L.on || L.busy) { await HP.hp_mqttDisconnect(); return; }
+  const c = liveForm(); if (!c.host) return note("Bitte den MQTT-Broker eintragen (z. B. den Namen oder die IP des Home-Assistant-Rechners).");
+  L.busy = true; L.text = "verbinde …"; renderLive();
+  try { await HP.hp_mqttConnect(c); document.getElementById("liveForm").pass.value = ""; }
+  catch (e) { L.busy = false; L.text = "Fehler: " + e; renderLive(); }
+};
+document.getElementById("bMap").onclick = async () => {
+  st.live.mapBusy = true; renderLive();
+  note("Zigbee2MQTT erstellt die Netzwerkkarte. Das dauert bei großen Netzen einige Minuten.");
+  try { await HP.hp_networkmap(document.getElementById("mapRoutes").checked); } catch (e) { st.live.mapBusy = false; note("Fehler: " + e); renderLive(); }
+};
+
+// ---------------------------------------------------------------------------- Start
+setHaus(null);
+showFile(); renderAll(); renderLive();
+(async () => {
+  if (!HP) { note("Im Browser geöffnet: Plan-Datei über „Öffnen“ wählen. Live-Verbindung nur im Windows-Programm."); return; }
+  try {
+    const s = await HP.hp_settings();
+    const f = document.getElementById("liveForm");
+    f.host.value = s.host || ""; f.port.value = s.port || 1883; f.user.value = s.user || ""; f.base.value = s.base || "zigbee2mqtt";
+    f.pass.placeholder = s.hasPass ? "gespeichert" : "";
+    document.getElementById("version").textContent = s.version || "";
+    if (s.lastFile) {
+      try { const r = await HP.hp_load(s.lastFile); loadProject(r, s.lastFile); }
+      catch (e) { note(`Zuletzt geöffnete Datei nicht lesbar (${s.lastFile}): ${e}`); }
+    }
+    if (s.autoConnect && s.host) document.getElementById("bConnect").click();
+  } catch (e) { note("Einstellungen nicht lesbar: " + e); }
+})();
+
+</script>
+</body></html>

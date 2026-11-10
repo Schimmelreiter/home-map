@@ -1,0 +1,7 @@
+# Plan-Dateien enthalten Grundriss und Geraeteliste – nicht ins oeffentliche Repo
+*.zplan.json
+*.zplan.json.bak
+*.zplan.json.tmp
+# Build
+/dist/
+*.exe
