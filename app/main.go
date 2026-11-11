@@ -47,8 +47,13 @@ func main() {
 		},
 	})
 	if wv == nil {
-		msgBox("Zigbee-Hausplan", "WebView2 konnte nicht gestartet werden.\n\n"+
-			"Bitte die „Microsoft Edge WebView2 Runtime“ installieren:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703", 0x10)
+		hinweis := "Bitte die „Microsoft Edge WebView2 Runtime“ installieren:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703"
+		if exe, err := os.Executable(); err == nil {
+			if _, err := os.Stat(filepath.Join(filepath.Dir(exe), "WebView2Loader.dll")); err != nil {
+				hinweis = "WebView2Loader.dll fehlt. Sie muss im selben Ordner wie home-map.exe liegen."
+			}
+		}
+		msgBox("Zigbee-Hausplan", "WebView2 konnte nicht gestartet werden.\n\n"+hinweis, 0x10)
 		os.Exit(1)
 	}
 	defer wv.Destroy()
@@ -85,7 +90,7 @@ func bind() {
 	must(wv.Bind("hp_settings", func() map[string]any {
 		return map[string]any{
 			"host": cfg.MQTT.Host, "port": cfg.MQTT.Port, "user": cfg.MQTT.User, "base": cfg.MQTT.Base,
-			"hasPass": cfg.MQTT.PassEnc != "", "autoConnect": cfg.AutoConnect,
+			"hasPass": cfg.hasPassword(), "autoConnect": cfg.AutoConnect,
 			"lastFile": cfg.LastFile, "version": "home-map " + version,
 		}
 	}))

@@ -16,7 +16,7 @@ jobs:
         with: {go-version-file: app/go.mod, cache-dependency-path: app/go.sum}
       - run: ./build.sh
       - uses: actions/upload-artifact@v4
-        with: {name: home-map, path: dist/home-map.exe}
+        with: {name: home-map, path: dist/}
       - if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
-        with: {files: dist/home-map.exe}
+        with: {files: "dist/*"}

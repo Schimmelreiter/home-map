@@ -3,7 +3,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 )
 
 // settings liegen in %APPDATA%\home-map\einstellungen.json.
-// Das MQTT-Passwort wird mit DPAPI fuer das angemeldete Windows-Konto verschluesselt.
 type settings struct {
 	LastFile    string `json:"zuletzt"`
 	AutoConnect bool   `json:"automatisch_verbinden"`
@@ -21,7 +19,6 @@ type settings struct {
 		Host    string `json:"host"`
 		Port    int    `json:"port"`
 		User    string `json:"benutzer"`
-		PassEnc string `json:"passwort_dpapi,omitempty"`
 		Base    string `json:"topic"`
 	} `json:"mqtt"`
 }
@@ -42,38 +39,62 @@ func (s *settings) save() {
 	_ = os.WriteFile(settingsPath(), b, 0o600)
 }
 
+// Das MQTT-Passwort liegt in der Windows-Anmeldeinformationsverwaltung
+// (Systemsteuerung > Anmeldeinformationsverwaltung > Windows-Anmeldeinformationen, „home-map/mqtt“).
+const credTarget = "home-map/mqtt"
+
+var (
+	advapi32       = windows.NewLazySystemDLL("advapi32.dll")
+	procCredWriteW = advapi32.NewProc("CredWriteW")
+	procCredReadW  = advapi32.NewProc("CredReadW")
+	procCredFree   = advapi32.NewProc("CredFree")
+)
+
+// CREDENTIALW (wincred.h)
+type credential struct {
+	Flags              uint32
+	Type               uint32
+	TargetName         *uint16
+	Comment            *uint16
+	LastWritten        windows.Filetime
+	CredentialBlobSize uint32
+	CredentialBlob     *byte
+	Persist            uint32
+	AttributeCount     uint32
+	Attributes         uintptr
+	TargetAlias        *uint16
+	UserName           *uint16
+}
+
+const (
+	credTypeGeneric      = 1
+	credPersistLocalMach = 2
+)
+
 func (s *settings) setPassword(p string) {
-	enc, err := dpapi([]byte(p), true)
-	if err == nil {
-		s.MQTT.PassEnc = base64.StdEncoding.EncodeToString(enc)
+	if p == "" {
+		return
 	}
+	blob := []byte(p)
+	t, _ := windows.UTF16PtrFromString(credTarget)
+	u, _ := windows.UTF16PtrFromString(s.MQTT.User)
+	c := credential{Type: credTypeGeneric, TargetName: t, UserName: u, Persist: credPersistLocalMach,
+		CredentialBlobSize: uint32(len(blob)), CredentialBlob: &blob[0]}
+	procCredWriteW.Call(uintptr(unsafe.Pointer(&c)), 0)
 }
 
 func (s *settings) password() string {
-	raw, err := base64.StdEncoding.DecodeString(s.MQTT.PassEnc)
-	if err != nil || len(raw) == 0 {
+	t, _ := windows.UTF16PtrFromString(credTarget)
+	var pc *credential
+	r, _, _ := procCredReadW.Call(uintptr(unsafe.Pointer(t)), credTypeGeneric, 0, uintptr(unsafe.Pointer(&pc)))
+	if r == 0 || pc == nil {
 		return ""
 	}
-	dec, err := dpapi(raw, false)
-	if err != nil {
+	defer procCredFree.Call(uintptr(unsafe.Pointer(pc)))
+	if pc.CredentialBlobSize == 0 {
 		return ""
 	}
-	return string(dec)
+	return string(unsafe.Slice(pc.CredentialBlob, pc.CredentialBlobSize))
 }
 
-func dpapi(data []byte, protect bool) ([]byte, error) {
-	in := windows.DataBlob{Size: uint32(len(data)), Data: &data[0]}
-	var out windows.DataBlob
-	var err error
-	const uiForbidden = 0x1
-	if protect {
-		err = windows.CryptProtectData(&in, nil, nil, 0, nil, uiForbidden, &out)
-	} else {
-		err = windows.CryptUnprotectData(&in, nil, nil, 0, nil, uiForbidden, &out)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer windows.LocalFree(windows.Handle(unsafe.Pointer(out.Data)))
-	return append([]byte(nil), unsafe.Slice(out.Data, out.Size)...), nil
-}
+func (s *settings) hasPassword() bool { return s.password() != "" }

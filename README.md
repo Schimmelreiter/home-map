@@ -28,12 +28,12 @@ gewünscht – live, welche Geräte gerade online sind.
 
 ## Starten
 
-`home-map.exe` herunterladen (unter *Actions* bzw. *Releases*) und starten. Benötigt wird die
+`home-map.exe` **und** `WebView2Loader.dll` (beide unter *Actions* bzw. *Releases*) in denselben Ordner legen und `home-map.exe` starten. Benötigt wird die
 **Microsoft Edge WebView2 Runtime** – in Windows 11 und aktuellen Windows-10-Versionen ist sie bereits
 enthalten. Eine Installation ist nicht nötig.
 
 Einstellungen (zuletzt geöffnete Datei, MQTT-Zugang) liegen in `%APPDATA%\home-map\einstellungen.json`.
-Das MQTT-Passwort wird mit der Windows-Datenschutz-API (DPAPI) für das angemeldete Konto verschlüsselt.
+Das MQTT-Passwort liegt in der Windows-Anmeldeinformationsverwaltung (Eintrag `home-map/mqtt`).
 
 Eine Plan-Datei kann auch als Argument übergeben werden (`home-map.exe Hausplan.zplan.json`), z. B. über
 „Öffnen mit“.
@@ -78,6 +78,7 @@ Aufbau:
 | `app/live.go` | MQTT-Verbindung zu Zigbee2MQTT |
 | `app/win.go`, `app/settings.go` | Datei-Dialoge, Einstellungen, DPAPI |
 | `app/winres/` | Symbol, Manifest, Versionsinfo (`go-winres make` erzeugt die `.syso`) |
+| `app/third_party/go-webview2/` | Kopie von go-webview2 (MIT); geändert: `WebView2Loader.dll` wird nur von der Platte geladen, nicht aus dem Speicher – das hatten Virenscanner als Trojaner gemeldet |
 
 Verwendete Bibliotheken: [go-webview2](https://github.com/jchv/go-webview2),
 [paho.mqtt.golang](https://github.com/eclipse/paho.mqtt.golang), golang.org/x/sys.
